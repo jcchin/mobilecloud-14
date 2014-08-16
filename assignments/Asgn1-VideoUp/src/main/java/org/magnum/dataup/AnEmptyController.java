@@ -67,7 +67,7 @@ public class AnEmptyController {
 	}
 	
 	@RequestMapping(value="/video/{id}/data", method=RequestMethod.POST)
-	public @ResponseBody VideoStatus setVideoData(@RequestBody Video v, @PathVariable("id") long id, @RequestParam("data") MultipartFile videoData, HttpServletResponse response){
+	public @ResponseBody VideoStatus setVideoData(@PathVariable("id") long id, @RequestParam("data") MultipartFile videoData, HttpServletResponse response){
 		Video vid = getVideo(id);
 		if(vid !=null){
 			InputStream stream;
