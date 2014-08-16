@@ -18,6 +18,9 @@
 package org.magnum.dataup;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
@@ -43,39 +46,51 @@ import org.springframework.web.multipart.MultipartFile;
 
 @Controller
 public class AnEmptyController {
-	private VideoFileManager videoDataMgr;
-	private static final AtomicLong currentId = new AtomicLong(0L);
-	private Map<Long,Video> videos = new HashMap<Long, Video>();
+	//private VideoFileManager videoDataMgr;
+	private static long currentId;
+	//private Map<Long,Video> videos = new HashMap<Long, Video>();
+	private ArrayList<Video> videos = new ArrayList<Video>();
 	
 	@RequestMapping(value="/video", method=RequestMethod.GET)
-	public @ResponseBody Collection getVideoList(){
-		return videos.values();
+	public @ResponseBody Collection<Video> getVideoList(){
+		return videos;
 	}
 	
 	@RequestMapping(value="/video", method=RequestMethod.POST)
 	public @ResponseBody Video addVideo(@RequestBody Video v){
-		save(v);
-		v.setDataUrl(getDataUrl(v.getId()));
+		currentId = videos.isEmpty() ? 1 : currentId++;
+		v.setId(currentId);
+		v.setDataUrl(getDataUrl(currentId));
+		videos.add(v);
+		
 		return v;
 	}
 	
 	@RequestMapping(value="/video/{id}/data", method=RequestMethod.POST)
-	public @ResponseBody VideoStatus setVideoData(@RequestBody Video v, @PathVariable("id") long id, @RequestParam("data") MultipartFile videoData){
-		try {
-            videoDataMgr = VideoFileManager.get();
-            saveSomeVideo(v,videoData);
-            return new VideoStatus(VideoState.READY);
-        } catch (IOException e) {
-            e.printStackTrace();
-            return null;
-        }	
+	public @ResponseBody VideoStatus setVideoData(@RequestBody Video v, @PathVariable("id") long id, @RequestParam("data") MultipartFile videoData, HttpServletResponse response){
+		Video vid = getVideo(id);
+		if(vid !=null){
+			InputStream stream;
+			try{
+				stream = videoData.getInputStream();
+				VideoFileManager.get().saveVideoData(vid, stream);
+			} catch (IOException e){
+				e.printStackTrace();
+	            return null;
+			}
+		} else {
+			response.setStatus(404);
+			return null;
+		}
+		return new VideoStatus(VideoState.READY);	
 	}
 	
 	@RequestMapping(value="/video/{id}/data", method=RequestMethod.GET)
-	public @ResponseBody void getData(@RequestBody Video v, @PathVariable("id") long id, HttpServletResponse response) throws IOException {
+	public @ResponseBody void getData(@PathVariable("id") long id, HttpServletResponse response) throws IOException {
+		VideoFileManager videoDataMgr;
 		try {
-            videoDataMgr = VideoFileManager.get();
-            serveSomeVideo(v,response);
+			videoDataMgr = VideoFileManager.get();
+            serveSomeVideo(videoDataMgr,response, id);
 		 } catch (IOException e) {
 			 e.printStackTrace();
          }
@@ -85,33 +100,40 @@ public class AnEmptyController {
     // videoDataMgr = VideoFileManager.get()
     //
 
-    // You would need some Controller method to call this...
-  	public void saveSomeVideo(Video v, MultipartFile videoData) throws IOException {
-  	     videoDataMgr.saveVideoData(v, videoData.getInputStream());
-  	}
   	
-  	public void serveSomeVideo(Video v, HttpServletResponse response) throws IOException {
+  	public void serveSomeVideo(VideoFileManager vDM, HttpServletResponse response, long id) throws IOException {
   	     // Of course, you would need to send some headers, etc. to the
   	     // client too!
   	     //  ...
-  	     videoDataMgr.copyVideoData(v, response.getOutputStream());
+        Video v = getVideo(id);
+        if(v != null && vDM.hasVideoData(v)){
+        	OutputStream out = response.getOutputStream();
+        	vDM.copyVideoData(v, out);
+        	response.setStatus(200);
+        } else{
+        	response.setStatus(404);
+        	return;
+        }
   	}
-	
-	public Video save(Video entity) {
-        checkAndSetId(entity);
-        videos.put(entity.getId(), entity);
-        return entity;
-	}
+	/*
 	private void checkAndSetId(Video entity) {
 		if(entity.getId() == 0){
 			entity.setId(currentId.incrementAndGet());
         }
-	 }
+	 }*/
 	private String getDataUrl(long videoId){
         String url = getUrlBaseForLocalServer() + "/video/" + videoId + "/data";
         return url;
     }
 
+	private Video getVideo(long id){
+		try{
+			return videos.get((int) (id - 1));
+		} catch(ArrayIndexOutOfBoundsException ex){
+			return null;
+		}
+	}
+	
  	private String getUrlBaseForLocalServer() {
 	   HttpServletRequest request = 
 	       ((ServletRequestAttributes) RequestContextHolder.getRequestAttributes()).getRequest();
